@@ -281,8 +281,7 @@ static int get_global_magic(int element_magic)
 	if (get_icase_global())
 		global_magic |= PATHSPEC_ICASE;
 
-	if ((global_magic & PATHSPEC_LITERAL) &&
-	    (global_magic & ~PATHSPEC_LITERAL))
+	if ((global_magic & PATHSPEC_LITERAL) && (global_magic != PATHSPEC_LITERAL))
 		die(_("global 'literal' pathspec setting is incompatible "
 		      "with all other global pathspec settings"));
 
