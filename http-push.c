@@ -924,7 +924,7 @@ static struct remote_lock *lock_remote(const char *path, long timeout)
 				results.curl_result, results.http_code);
 		}
 	} else {
-		fprintf(stderr, "Unable to start LOCK request\n");
+		fputs("Unable to start LOCK request\n", stderr);
 	}
 
 	curl_slist_free_all(dav_headers);
@@ -969,7 +969,7 @@ static int unlock_remote(struct remote_lock *lock)
 			fprintf(stderr, "UNLOCK HTTP error %ld\n",
 				results.http_code);
 	} else {
-		fprintf(stderr, "Unable to start UNLOCK request\n");
+		fputs("Unable to start UNLOCK request\n", stderr);
 	}
 
 	curl_slist_free_all(dav_headers);
@@ -1405,7 +1405,7 @@ static int update_remote(const struct object_id *oid, struct remote_lock *lock)
 		}
 	} else {
 		strbuf_release(&out_buffer.buf);
-		fprintf(stderr, "Unable to start PUT request\n");
+		fputs("Unable to start PUT request\n", stderr);
 		return 0;
 	}
 
