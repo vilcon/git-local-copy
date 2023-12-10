@@ -1,4 +1,5 @@
 #include "../git-compat-util.h"
+#include "../abspath.h"
 #include "../config.h"
 #include "../copy.h"
 #include "../environment.h"
@@ -9,6 +10,7 @@
 #include "refs-internal.h"
 #include "ref-cache.h"
 #include "packed-backend.h"
+#include "reftable-backend.h"
 #include "../ident.h"
 #include "../iterator.h"
 #include "../dir-iterator.h"
@@ -98,13 +100,25 @@ static struct ref_store *files_ref_store_create(struct repository *repo,
 	struct files_ref_store *refs = xcalloc(1, sizeof(*refs));
 	struct ref_store *ref_store = (struct ref_store *)refs;
 	struct strbuf sb = STRBUF_INIT;
+	int has_reftable, has_packed;
 
 	base_ref_store_init(ref_store, repo, gitdir, &refs_be_files);
 	refs->store_flags = flags;
 	get_common_dir_noenv(&sb, gitdir);
 	refs->gitcommondir = strbuf_detach(&sb, NULL);
-	refs->packed_ref_store =
-		packed_ref_store_create(repo, refs->gitcommondir, flags);
+
+	strbuf_addf(&sb, "%s/reftable", refs->gitcommondir);
+	has_reftable = is_directory(sb.buf);
+	strbuf_reset(&sb);
+	strbuf_addf(&sb, "%s/packed-refs", refs->gitcommondir);
+	has_packed = file_exists(sb.buf);
+
+	if (!has_packed && !has_reftable)
+		has_reftable = git_env_bool("GIT_TEST_REFTABLE", 0);
+
+	refs->packed_ref_store = has_reftable
+		? git_reftable_ref_store_create(repo, refs->gitcommondir, flags)
+		: packed_ref_store_create(repo, refs->gitcommondir, flags);
 
 	chdir_notify_reparent("files-backend $GIT_DIR", &refs->base.gitdir);
 	chdir_notify_reparent("files-backend $GIT_COMMONDIR",
@@ -1215,10 +1229,10 @@ static int files_pack_refs(struct ref_store *ref_store,
 	struct ref_transaction *transaction;
 
 	transaction = ref_store_transaction_begin(refs->packed_ref_store, &err);
-	if (!transaction)
+	if (!transaction) {
+		die("could not start transaction: %s", err.buf);
 		return -1;
-
-	packed_refs_lock(refs->packed_ref_store, LOCK_DIE_ON_ERROR, &err);
+	}
 
 	iter = cache_ref_iterator_begin(get_loose_ref_cache(refs), NULL,
 					the_repository, 0);
@@ -1258,8 +1272,6 @@ static int files_pack_refs(struct ref_store *ref_store,
 
 	ref_transaction_free(transaction);
 
-	packed_refs_unlock(refs->packed_ref_store);
-
 	prune_refs(refs, &refs_to_prune);
 	strbuf_release(&err);
 	return 0;
@@ -1276,15 +1288,9 @@ static int files_delete_refs(struct ref_store *ref_store, const char *msg,
 	if (!refnames->nr)
 		return 0;
 
-	if (packed_refs_lock(refs->packed_ref_store, 0, &err))
-		goto error;
-
 	if (refs_delete_refs(refs->packed_ref_store, msg, refnames, flags)) {
-		packed_refs_unlock(refs->packed_ref_store);
 		goto error;
 	}
-
-	packed_refs_unlock(refs->packed_ref_store);
 
 	for (i = 0; i < refnames->nr; i++) {
 		const char *refname = refnames->items[i].string;
@@ -2634,9 +2640,103 @@ out:
 	return ret;
 }
 
+/*
+ * Return true if `transaction` really needs to be carried out against
+ * the specified packed_ref_store, or false if it can be skipped
+ * (i.e., because it is an obvious NOOP). `ref_store` must be locked
+ * before calling this function.
+ */
+static int is_packed_transaction_needed(struct ref_store *ref_store,
+				 struct ref_transaction *transaction)
+{
+	struct strbuf referent = STRBUF_INIT;
+	size_t i;
+	int ret;
+
+	/*
+	 * We're only going to bother returning false for the common,
+	 * trivial case that references are only being deleted, their
+	 * old values are not being checked, and the old `packed-refs`
+	 * file doesn't contain any of those reference(s). This gives
+	 * false positives for some other cases that could
+	 * theoretically be optimized away:
+	 *
+	 * 1. It could be that the old value is being verified without
+	 *    setting a new value. In this case, we could verify the
+	 *    old value here and skip the update if it agrees. If it
+	 *    disagrees, we could either let the update go through
+	 *    (the actual commit would re-detect and report the
+	 *    problem), or come up with a way of reporting such an
+	 *    error to *our* caller.
+	 *
+	 * 2. It could be that a new value is being set, but that it
+	 *    is identical to the current packed value of the
+	 *    reference.
+	 *
+	 * Neither of these cases will come up in the current code,
+	 * because the only caller of this function passes to it a
+	 * transaction that only includes `delete` updates with no
+	 * `old_id`. Even if that ever changes, false positives only
+	 * cause an optimization to be missed; they do not affect
+	 * correctness.
+	 */
+
+	/*
+	 * Start with the cheap checks that don't require old
+	 * reference values to be read:
+	 */
+	for (i = 0; i < transaction->nr; i++) {
+		struct ref_update *update = transaction->updates[i];
+
+		if (update->flags & REF_HAVE_OLD)
+			/* Have to check the old value -> needed. */
+			return 1;
+
+		if ((update->flags & REF_HAVE_NEW) && !is_null_oid(&update->new_oid))
+			/* Have to set a new value -> needed. */
+			return 1;
+	}
+
+	/*
+	 * The transaction isn't checking any old values nor is it
+	 * setting any nonzero new values, so it still might be able
+	 * to be skipped. Now do the more expensive check: the update
+	 * is needed if any of the updates is a delete, and the old
+	 * `packed-refs` file contains a value for that reference.
+	 */
+	ret = 0;
+	for (i = 0; i < transaction->nr; i++) {
+		struct ref_update *update = transaction->updates[i];
+		int failure_errno;
+		unsigned int type;
+		struct object_id oid;
+
+		if (!(update->flags & REF_HAVE_NEW))
+			/*
+			 * This reference isn't being deleted -> not
+			 * needed.
+			 */
+			continue;
+
+		if (!refs_read_raw_ref(ref_store, update->refname, &oid,
+				       &referent, &type, &failure_errno) ||
+		    failure_errno != ENOENT) {
+			/*
+			 * We have to actually delete that reference
+			 * -> this transaction is needed.
+			 */
+			ret = 1;
+			break;
+		}
+	}
+
+	strbuf_release(&referent);
+	return ret;
+}
+
 struct files_transaction_backend_data {
 	struct ref_transaction *packed_transaction;
-	int packed_refs_locked;
+	int packed_transaction_needed;
 };
 
 /*
@@ -2668,13 +2768,18 @@ static void files_transaction_cleanup(struct files_ref_store *refs,
 			strbuf_release(&err);
 		}
 
-		if (backend_data->packed_refs_locked)
-			packed_refs_unlock(refs->packed_ref_store);
-
 		free(backend_data);
+		transaction->backend_data = NULL;
 	}
 
 	transaction->state = REF_TRANSACTION_CLOSED;
+}
+
+static struct ref_transaction *files_transaction_begin(struct ref_store *ref_store,
+						       struct strbuf *err) {
+	struct ref_transaction *tr;
+	CALLOC_ARRAY(tr, 1);
+	return tr;
 }
 
 static int files_transaction_prepare(struct ref_store *ref_store,
@@ -2691,6 +2796,7 @@ static int files_transaction_prepare(struct ref_store *ref_store,
 	int head_type;
 	struct files_transaction_backend_data *backend_data;
 	struct ref_transaction *packed_transaction = NULL;
+	int is_reftable = !strcmp(refs->packed_ref_store->be->name, "reftable");
 
 	assert(err);
 
@@ -2699,6 +2805,16 @@ static int files_transaction_prepare(struct ref_store *ref_store,
 
 	CALLOC_ARRAY(backend_data, 1);
 	transaction->backend_data = backend_data;
+
+	if (is_reftable) {
+		packed_transaction = ref_store_transaction_begin(
+			refs->packed_ref_store, err);
+		if (!packed_transaction) {
+			ret = TRANSACTION_GENERIC_ERROR;
+			goto cleanup;
+		}
+		backend_data->packed_transaction = packed_transaction;
+	}
 
 	/*
 	 * Fail if a refname appears more than once in the
@@ -2772,9 +2888,9 @@ static int files_transaction_prepare(struct ref_store *ref_store,
 		if (ret)
 			goto cleanup;
 
-		if (update->flags & REF_DELETING &&
-		    !(update->flags & REF_LOG_ONLY) &&
-		    !(update->flags & REF_IS_PRUNING)) {
+		if (is_reftable || (update->flags & REF_DELETING &&
+				    !(update->flags & REF_LOG_ONLY) &&
+				    !(update->flags & REF_IS_PRUNING))) {
 			/*
 			 * This reference has to be deleted from
 			 * packed-refs if it exists there.
@@ -2800,14 +2916,10 @@ static int files_transaction_prepare(struct ref_store *ref_store,
 	}
 
 	if (packed_transaction) {
-		if (packed_refs_lock(refs->packed_ref_store, 0, err)) {
-			ret = TRANSACTION_GENERIC_ERROR;
-			goto cleanup;
-		}
-		backend_data->packed_refs_locked = 1;
-
-		if (is_packed_transaction_needed(refs->packed_ref_store,
-						 packed_transaction)) {
+		backend_data->packed_transaction_needed = is_reftable ||
+			is_packed_transaction_needed(refs->packed_ref_store,
+						     packed_transaction);
+		if (backend_data->packed_transaction_needed) {
 			ret = ref_transaction_prepare(packed_transaction, err);
 			/*
 			 * A failure during the prepare step will abort
@@ -2818,22 +2930,6 @@ static int files_transaction_prepare(struct ref_store *ref_store,
 			if (ret) {
 				ref_transaction_free(packed_transaction);
 				backend_data->packed_transaction = NULL;
-			}
-		} else {
-			/*
-			 * We can skip rewriting the `packed-refs`
-			 * file. But we do need to leave it locked, so
-			 * that somebody else doesn't pack a reference
-			 * that we are trying to delete.
-			 *
-			 * We need to disconnect our transaction from
-			 * backend_data, since the abort (whether successful or
-			 * not) will free it.
-			 */
-			backend_data->packed_transaction = NULL;
-			if (ref_transaction_abort(packed_transaction, err)) {
-				ret = TRANSACTION_GENERIC_ERROR;
-				goto cleanup;
 			}
 		}
 	}
@@ -2936,13 +3032,24 @@ static int files_transaction_finish(struct ref_store *ref_store,
 	 * First delete any packed versions of the references, while
 	 * retaining the packed-refs lock:
 	 */
-	if (packed_transaction) {
-		ret = ref_transaction_commit(packed_transaction, err);
-		ref_transaction_free(packed_transaction);
-		packed_transaction = NULL;
-		backend_data->packed_transaction = NULL;
-		if (ret)
-			goto cleanup;
+	if (backend_data->packed_transaction) {
+		if (backend_data->packed_transaction_needed) {
+			ret = ref_transaction_commit(packed_transaction, err);
+			if (ret)
+				goto cleanup;
+
+			ref_transaction_free(packed_transaction);
+			packed_transaction = NULL;
+			backend_data->packed_transaction = NULL;
+		} else {
+			ret = ref_transaction_abort(packed_transaction, err);
+			if (ret)
+				goto cleanup;
+
+			/* transaction_commit doesn't free the data, but transaction_abort does. Go figure. */
+			packed_transaction = NULL;
+			backend_data->packed_transaction = NULL;
+		}
 	}
 
 	/* Now delete the loose versions of the references: */
@@ -3083,16 +3190,10 @@ static int files_initial_transaction_commit(struct ref_store *ref_store,
 					   NULL);
 	}
 
-	if (packed_refs_lock(refs->packed_ref_store, 0, err)) {
-		ret = TRANSACTION_GENERIC_ERROR;
-		goto cleanup;
-	}
-
 	if (initial_ref_transaction_commit(packed_transaction, err)) {
 		ret = TRANSACTION_GENERIC_ERROR;
 	}
 
-	packed_refs_unlock(refs->packed_ref_store);
 cleanup:
 	if (packed_transaction)
 		ref_transaction_free(packed_transaction);
@@ -3293,6 +3394,7 @@ struct ref_storage_be refs_be_files = {
 	.name = "files",
 	.init = files_ref_store_create,
 	.init_db = files_init_db,
+	.transaction_begin = files_transaction_begin,
 	.transaction_prepare = files_transaction_prepare,
 	.transaction_finish = files_transaction_finish,
 	.transaction_abort = files_transaction_abort,

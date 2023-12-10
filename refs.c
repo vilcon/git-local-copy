@@ -1129,11 +1129,9 @@ int read_ref_at(struct ref_store *refs, const char *refname,
 struct ref_transaction *ref_store_transaction_begin(struct ref_store *refs,
 						    struct strbuf *err)
 {
-	struct ref_transaction *tr;
-	assert(err);
-
-	CALLOC_ARRAY(tr, 1);
-	tr->ref_store = refs;
+	struct ref_transaction *tr = refs->be->transaction_begin(refs, err);
+	if (tr)
+		tr->ref_store = refs;
 	return tr;
 }
 
@@ -2322,10 +2320,9 @@ int ref_transaction_abort(struct ref_transaction *transaction,
 	int ret = 0;
 
 	switch (transaction->state) {
-	case REF_TRANSACTION_OPEN:
-		/* No need to abort explicitly. */
-		break;
 	case REF_TRANSACTION_PREPARED:
+	case REF_TRANSACTION_OPEN:
+		/* an OPEN transactions may have a lock. */
 		ret = refs->be->transaction_abort(refs, transaction, err);
 		break;
 	case REF_TRANSACTION_CLOSED:
