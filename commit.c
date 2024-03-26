@@ -1666,7 +1666,7 @@ int commit_tree_extended(const char *msg, size_t msg_len,
 
 	/* And check the encoding */
 	if (encoding_is_utf8 && !verify_utf8(&buffer))
-		fprintf(stderr, _(commit_utf8_warn));
+		fputs(_(commit_utf8_warn), stderr);
 
 	if (sign_commit && sign_with_header(&buffer, sign_commit)) {
 		result = -1;

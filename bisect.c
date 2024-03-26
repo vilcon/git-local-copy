@@ -168,7 +168,7 @@ static void show_list(const char *debug, int counted, int nr,
 		if (*commit_weight_at(&commit_weight, p->item))
 			fprintf(stderr, "%3d", weight(p));
 		else
-			fprintf(stderr, "---");
+			fputs("---", stderr);
 		fprintf(stderr, " %.*s", 8, oid_to_hex(&commit->object.oid));
 		for (pp = commit->parents; pp; pp = pp->next)
 			fprintf(stderr, " %.*s", 8,
@@ -177,7 +177,7 @@ static void show_list(const char *debug, int counted, int nr,
 		subject_len = find_commit_subject(buf, &subject_start);
 		if (subject_len)
 			fprintf(stderr, " %.*s", subject_len, subject_start);
-		fprintf(stderr, "\n");
+		fputc('\n', stderr);
 	}
 }
 

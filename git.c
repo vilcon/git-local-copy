@@ -213,7 +213,7 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 				*envchanged = 1;
 		} else if (!strcmp(cmd, "--namespace")) {
 			if (*argc < 2) {
-				fprintf(stderr, _("no namespace given for --namespace\n" ));
+				fputs(_("no namespace given for --namespace\n" ), stderr);
 				usage(git_usage_string);
 			}
 			setenv(GIT_NAMESPACE_ENVIRONMENT, (*argv)[1], 1);
@@ -249,7 +249,7 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 				*envchanged = 1;
 		} else if (!strcmp(cmd, "-c")) {
 			if (*argc < 2) {
-				fprintf(stderr, _("-c expects a configuration string\n" ));
+				fputs(_("-c expects a configuration string\n"), stderr);
 				usage(git_usage_string);
 			}
 			git_config_push_parameter((*argv)[1]);
@@ -257,7 +257,7 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 			(*argc)--;
 		} else if (!strcmp(cmd, "--config-env")) {
 			if (*argc < 2) {
-				fprintf(stderr, _("no config key given for --config-env\n" ));
+				fputs(_("no config key given for --config-env\n" ), stderr);
 				usage(git_usage_string);
 			}
 			git_config_push_env((*argv)[1]);
@@ -324,7 +324,7 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 			}
 		} else if (!strcmp(cmd, "--attr-source")) {
 			if (*argc < 2) {
-				fprintf(stderr, _("no attribute source given for --attr-source\n" ));
+				fputs(_("no attribute source given for --attr-source\n" ), stderr);
 				usage(git_usage_string);
 			}
 			setenv(GIT_ATTR_SOURCE_ENVIRONMENT, (*argv)[1], 1);

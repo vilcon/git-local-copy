@@ -954,9 +954,9 @@ static int run_patch(struct add_i_state *s, const struct pathspec *ps,
 
 	if (!files->items.nr) {
 		if (binary_count)
-			fprintf(stderr, _("Only binary files changed.\n"));
+			fputs(_("Only binary files changed.\n"), stderr);
 		else
-			fprintf(stderr, _("No changes.\n"));
+			fputs(_("No changes.\n"), stderr);
 		return 0;
 	}
 

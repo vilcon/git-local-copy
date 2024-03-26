@@ -1768,9 +1768,9 @@ int run_add_p(struct repository *r, enum add_p_mode mode,
 			break;
 
 	if (s.file_diff_nr == 0)
-		fprintf(stderr, _("No changes.\n"));
+		fputs(_("No changes.\n"), stderr);
 	else if (binary_count == s.file_diff_nr)
-		fprintf(stderr, _("Only binary files changed.\n"));
+		fputs(_("Only binary files changed.\n"), stderr);
 
 	add_p_state_clear(&s);
 	return 0;

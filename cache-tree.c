@@ -171,7 +171,7 @@ static int verify_cache(struct index_state *istate, int flags)
 			if (silent)
 				return -1;
 			if (10 < ++funny) {
-				fprintf(stderr, "...\n");
+				fputs("...\n", stderr);
 				break;
 			}
 			fprintf(stderr, "%s: unmerged (%s)\n",
@@ -200,7 +200,7 @@ static int verify_cache(struct index_state *istate, int flags)
 		    next_name[this_len] == '/' &&
 		    strncmp(this_name, next_name, this_len) == 0) {
 			if (10 < ++funny) {
-				fprintf(stderr, "...\n");
+				fputs("...\n", stderr);
 				break;
 			}
 			fprintf(stderr, "You have both %s and %s\n",

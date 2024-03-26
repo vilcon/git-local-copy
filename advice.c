@@ -291,9 +291,9 @@ void advise_on_moving_dirty_path(struct string_list *pathspec_list)
 	if (!pathspec_list->nr)
 		return;
 
-	fprintf(stderr, _("The following paths have been moved outside the\n"
+	fputs(_("The following paths have been moved outside the\n"
 			  "sparse-checkout definition but are not sparse due to local\n"
-			  "modifications.\n"));
+			  "modifications.\n"), stderr);
 	for_each_string_list_item(item, pathspec_list)
 		fprintf(stderr, "%s\n", item->string);
 
