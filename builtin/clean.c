@@ -919,7 +919,7 @@ static void correct_untracked_entries(struct dir_struct *dir)
 int cmd_clean(int argc, const char **argv, const char *prefix)
 {
 	int i, res;
-	int dry_run = 0, remove_directories = 0, quiet = 0, ignored = 0;
+	int dry_run = 0, remove_directories = 0, quiet = 0, remove_ignored = 0;
 	int ignored_only = 0, force = 0, errors = 0, gone = 1;
 	int rm_flags = REMOVE_DIR_KEEP_NESTED_GIT;
 	struct strbuf abs_path = STRBUF_INIT;
@@ -938,7 +938,7 @@ int cmd_clean(int argc, const char **argv, const char *prefix)
 				N_("remove whole directories")),
 		OPT_CALLBACK_F('e', "exclude", &exclude_list, N_("pattern"),
 		  N_("add <pattern> to ignore rules"), PARSE_OPT_NONEG, exclude_cb),
-		OPT_BOOL('x', NULL, &ignored, N_("remove ignored files, too")),
+		OPT_BOOL('x', NULL, &remove_ignored, N_("remove ignored files, too")),
 		OPT_BOOL('X', NULL, &ignored_only,
 				N_("remove only ignored files")),
 		OPT_END()
@@ -959,9 +959,9 @@ int cmd_clean(int argc, const char **argv, const char *prefix)
 
 	dir.flags |= DIR_SHOW_OTHER_DIRECTORIES;
 
-	if (ignored && ignored_only)
+	if (remove_ignored && ignored_only)
 		die(_("options '%s' and '%s' cannot be used together"), "-x", "-X");
-	if (!ignored)
+	if (!remove_ignored)
 		setup_standard_excludes(&dir);
 	if (ignored_only)
 		dir.flags |= DIR_SHOW_IGNORED;
@@ -991,7 +991,7 @@ int cmd_clean(int argc, const char **argv, const char *prefix)
 		 * recursing into a directory which is itself ignored.
 		 */
 		dir.flags |= DIR_SHOW_IGNORED_TOO;
-		if (!ignored)
+		if (!remove_ignored)
 			dir.flags |= DIR_SHOW_IGNORED_TOO_MODE_MATCHING;
 
 		/*
