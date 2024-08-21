@@ -2349,4 +2349,38 @@ test_expect_success 'advice.sparseIndexExpanded' '
 	grep "The sparse index is expanding to a full index" err
 '
 
+test_expect_success 'cat-file -p' '
+	init_repos &&
+	echo "new content" >>full-checkout/deep/a &&
+	echo "new content" >>sparse-checkout/deep/a &&
+	echo "new content" >>sparse-index/deep/a &&
+	run_on_all git add deep/a &&
+
+	test_all_match git cat-file -p :deep/a &&
+	ensure_not_expanded cat-file -p :deep/a &&
+	test_all_match git cat-file -p :folder1/a &&
+	ensure_expanded cat-file -p :folder1/a'
+
+test_expect_success 'cat-file --batch' '
+	init_repos &&
+	echo "new content" >>full-checkout/deep/a &&
+	echo "new content" >>sparse-checkout/deep/a &&
+	echo "new content" >>sparse-index/deep/a &&
+	run_on_all git add deep/a &&
+
+	echo ":deep/a">in &&
+	test_all_match git cat-file --batch <in &&
+	ensure_not_expanded cat-file --batch <in &&
+
+	echo ":folder1/a">in &&
+	test_all_match git cat-file --batch <in &&
+	ensure_expanded cat-file --batch <in &&
+
+	cat <<-\EOF >in &&
+	:deep/a
+	:folder1/a
+	EOF
+	test_all_match git cat-file --batch <in &&
+	ensure_expanded cat-file --batch <in'
+
 test_done
