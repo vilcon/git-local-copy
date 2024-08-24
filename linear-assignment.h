@@ -13,10 +13,10 @@
  * assignments (-1 for unassigned, which can happen only if column_count !=
  * row_count).
  */
-void compute_assignment(int column_count, int row_count, int *cost,
-			int *column2row, int *row2column);
+void compute_assignment(int column_count, int row_count, const int *cost,
+                        int *column2row, int *row2column);
 
 /* The maximal cost in the cost matrix (to prevent integer overflows). */
-#define COST_MAX (1<<16)
+#define COST_MAX (1 << 16)
 
 #endif
