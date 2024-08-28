@@ -1966,9 +1966,8 @@ static int create_ref_symlink(struct ref_lock *lock, const char *target)
 	return ret;
 }
 
-static int create_symref_lock(struct files_ref_store *refs,
-			      struct ref_lock *lock, const char *refname,
-			      const char *target, struct strbuf *err)
+static int create_symref_lock(struct ref_lock *lock, const char *target,
+			      struct strbuf *err)
 {
 	if (!fdopen_lock_file(&lock->lk, "w")) {
 		strbuf_addf(err, "unable to fdopen %s: %s",
@@ -2584,8 +2583,7 @@ static int lock_ref_for_update(struct files_ref_store *refs,
 	}
 
 	if (update->new_target && !(update->flags & REF_LOG_ONLY)) {
-		if (create_symref_lock(refs, lock, update->refname,
-				       update->new_target, err)) {
+		if (create_symref_lock(lock, update->new_target, err)) {
 			ret = TRANSACTION_GENERIC_ERROR;
 			goto out;
 		}
@@ -3443,7 +3441,6 @@ typedef int (*files_fsck_refs_fn)(struct ref_store *ref_store,
  */
 static int files_fsck_symref_target(struct fsck_options *o,
 				    struct fsck_ref_report *report,
-				    const char *refname,
 				    struct strbuf *pointee_name,
 				    struct strbuf *pointee_path,
 				    unsigned int symbolic_link)
@@ -3565,7 +3562,7 @@ static int files_fsck_refs_content(struct ref_store *ref_store,
 		} else {
 			strbuf_addf(&pointee_path, "%s/%s",
 				    ref_store->gitdir, referent.buf);
-			ret = files_fsck_symref_target(o, &report, refname.buf,
+			ret = files_fsck_symref_target(o, &report,
 						       &referent,
 						       &pointee_path,
 						       symbolic_link);
@@ -3589,7 +3586,7 @@ static int files_fsck_refs_content(struct ref_store *ref_store,
 	}
 
 	strbuf_addstr(&referent, pointee_name);
-	ret = files_fsck_symref_target(o, &report, refname.buf,
+	ret = files_fsck_symref_target(o, &report,
 				       &referent, &pointee_path,
 				       symbolic_link);
 
