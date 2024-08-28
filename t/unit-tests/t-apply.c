@@ -23,7 +23,7 @@ static void setup_static(struct test_case t)
 	check_int(p2, ==, t.expect_p2);
 }
 
-int cmd_main(int argc, const char **argv)
+int cmd_main(int argc UNUSED, const char **argv UNUSED)
 {
 	TEST(setup_static((struct test_case) {
 		.line = "@@ -4,4 +",
