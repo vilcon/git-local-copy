@@ -9,7 +9,7 @@
 # Input arguments are pathnames of shell scripts containing test definitions,
 # or globs referencing a collection of scripts. For each problem discovered,
 # the pathname of the script containing the test is printed along with the test
-# name and the test body with a `?!FOO?!` annotation at the location of each
+# name and the test body with a `?!ERR?!` annotation at the location of each
 # detected problem, where "FOO" is a tag such as "AMP" which indicates a broken
 # &&-chain. Returns zero if no problems are discovered, otherwise non-zero.
 
@@ -181,7 +181,7 @@ sub swallow_heredocs {
 			$self->{lineno} += () = $body =~ /\n/sg;
 			next;
 		}
-		push(@{$self->{parser}->{problems}}, ['UNCLOSED-HEREDOC', $tag]);
+		push(@{$self->{parser}->{problems}}, ['HEREDOC', $tag]);
 		$$b =~ /(?:\G|\n).*\z/gc; # consume rest of input
 		my $body = substr($$b, $start, pos($$b) - $start);
 		$self->{lineno} += () = $body =~ /\n/sg;
@@ -238,6 +238,7 @@ sub new {
 		stop => [],
 		output => [],
 		heredocs => {},
+		insubshell => 0,
 	} => $class;
 	$self->{lexer} = Lexer->new($self, $s);
 	return $self;
@@ -296,8 +297,11 @@ sub parse_group {
 
 sub parse_subshell {
 	my $self = shift @_;
-	return ($self->parse(qr/^\)$/),
-		$self->expect(')'));
+	$self->{insubshell}++;
+	my @tokens = ($self->parse(qr/^\)$/),
+		      $self->expect(')'));
+	$self->{insubshell}--;
+	return @tokens;
 }
 
 sub parse_case_pattern {
@@ -528,7 +532,7 @@ sub parse_loop_body {
 	return @tokens if ends_with(\@tokens, [qr/^\|\|$/, "\n", qr/^echo$/, qr/^.+$/]);
 	# flag missing "return/exit" handling explicit failure in loop body
 	my $n = find_non_nl(\@tokens);
-	push(@{$self->{problems}}, ['LOOP', $tokens[$n]]);
+	push(@{$self->{problems}}, [$self->{insubshell} ? 'LOOPEXIT' : 'LOOPRETURN', $tokens[$n]]);
 	return @tokens;
 }
 
@@ -619,6 +623,15 @@ sub unwrap {
 	return $s
 }
 
+sub format_problem {
+	local $_ = shift;
+	/^AMP$/ && return "missing '&&'";
+	/^LOOPRETURN$/ && return "missing '|| return 1'";
+	/^LOOPEXIT$/ && return "missing '|| exit 1'";
+	/^HEREDOC$/ && return 'unclosed heredoc';
+	die("unrecognized problem type '$_'\n");
+}
+
 sub check_test {
 	my $self = shift @_;
 	my $title = unwrap(shift @_);
@@ -641,7 +654,8 @@ sub check_test {
 	for (sort {$a->[1]->[2] <=> $b->[1]->[2]} @$problems) {
 		my ($label, $token) = @$_;
 		my $pos = $token->[2];
-		$checked .= substr($body, $start, $pos - $start) . " ?!$label?! ";
+		my $err = format_problem($label, $token);
+		$checked .= substr($body, $start, $pos - $start) . " ?!ERR $err?! ";
 		$start = $pos;
 	}
 	$checked .= substr($body, $start);
