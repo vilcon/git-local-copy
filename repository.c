@@ -119,6 +119,13 @@ const char *repo_get_index_file(struct repository *repo)
 	return repo->index_file;
 }
 
+const char *repo_get_graft_file(struct repository *repo)
+{
+	if (!repo->graft_file)
+		BUG("git environment hasn't been setup");
+	return repo->graft_file;
+}
+
 static void repo_set_commondir(struct repository *repo,
 			       const char *commondir)
 {
