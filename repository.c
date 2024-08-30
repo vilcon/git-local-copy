@@ -98,6 +98,13 @@ const char *repo_get_git_dir(struct repository *repo)
 	return repo->gitdir;
 }
 
+const char *repo_get_common_dir(struct repository *repo)
+{
+	if (!repo->commondir)
+		BUG("git environment hasn't been setup");
+	return repo->commondir;
+}
+
 static void repo_set_commondir(struct repository *repo,
 			       const char *commondir)
 {
