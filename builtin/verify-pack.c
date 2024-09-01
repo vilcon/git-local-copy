@@ -1,6 +1,7 @@
 #include "builtin.h"
 #include "config.h"
 #include "gettext.h"
+#include "hash.h"
 #include "run-command.h"
 #include "parse-options.h"
 #include "strbuf.h"
@@ -76,6 +77,9 @@ int cmd_verify_pack(int argc, const char **argv, const char *prefix)
 			   N_("specify the hash algorithm to use")),
 		OPT_END()
 	};
+
+	if (!the_hash_algo)
+		repo_set_hash_algo(the_repository, GIT_HASH_SHA1);
 
 	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, prefix, verify_pack_options,

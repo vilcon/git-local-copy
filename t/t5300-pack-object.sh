@@ -322,6 +322,10 @@ test_expect_success 'verify-pack catches a corrupted sum of the index file itsel
 	fi
 '
 
+test_expect_success 'verify-pack outside a repository' '
+	nongit git verify-pack -v "$(pwd)/test-1-${packname_1}.idx"
+'
+
 test_expect_success 'build pack index for an existing pack' '
 	cat test-1-${packname_1}.pack >test-3.pack &&
 	git index-pack -o tmp.idx test-3.pack &&
