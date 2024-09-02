@@ -424,12 +424,30 @@ test_expect_success 'warn if using server-option with fetch with legacy protocol
 test_expect_success 'server-options are sent when cloning' '
 	test_when_finished "rm -rf log myclone" &&
 
+	# Specify server options from command line
 	GIT_TRACE_PACKET="$(pwd)/log" git -c protocol.version=2 \
 		clone --server-option=hello --server-option=world \
 		"file://$(pwd)/file_parent" myclone &&
+	test_grep "server-option=hello" log &&
+	test_grep "server-option=world" log &&
+	rm -rf log myclone &&
 
-	grep "server-option=hello" log &&
-	grep "server-option=world" log
+	# Specify server options from fetch.serverOption config
+	GIT_TRACE_PACKET="$(pwd)/log" git -c protocol.version=2 \
+		-c fetch.serverOption=hello -c fetch.serverOption=world \
+		clone "file://$(pwd)/file_parent" myclone &&
+	test_grep "server-option=hello" log &&
+	test_grep "server-option=world" log &&
+	rm -rf log myclone &&
+
+	# Cmdline server options take a higher priority
+	GIT_TRACE_PACKET="$(pwd)/log" git -c protocol.version=2 \
+		-c fetch.serverOption=hello -c fetch.serverOption=world \
+		clone --server-option=foo=bar \
+		"file://$(pwd)/file_parent" myclone &&
+	test_grep ! "server-option=hello" log &&
+	test_grep ! "server-option=world" log &&
+	test_grep "server-option=foo=bar" log
 '
 
 test_expect_success 'warn if using server-option with clone with legacy protocol' '
