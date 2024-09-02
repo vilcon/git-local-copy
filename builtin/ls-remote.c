@@ -1,4 +1,5 @@
 #include "builtin.h"
+#include "config.h"
 #include "gettext.h"
 #include "hex.h"
 #include "transport.h"
@@ -7,6 +8,8 @@
 #include "remote.h"
 #include "parse-options.h"
 #include "wildmatch.h"
+
+static struct string_list config_server_options = STRING_LIST_INIT_DUP;
 
 static const char * const ls_remote_usage[] = {
 	N_("git ls-remote [--branches] [--tags] [--refs] [--upload-pack=<exec>]\n"
@@ -37,6 +40,18 @@ static int tail_match(const struct strvec *pattern, const char *path)
 	return 0;
 }
 
+static int git_ls_remote_config(const char *k, const char *v,
+			    const struct config_context *ctx, void *cb)
+{
+	if (!strcmp(k, "fetch.serveroption")) {
+		if (!v)
+			return config_error_nonbool(k);
+		parse_transport_option(v, &config_server_options);
+		return 0;
+	}
+	return git_default_config(k, v, ctx, cb);
+}
+
 int cmd_ls_remote(int argc, const char **argv, const char *prefix)
 {
 	const char *dest = NULL;
@@ -49,8 +64,9 @@ int cmd_ls_remote(int argc, const char **argv, const char *prefix)
 	struct strvec pattern = STRVEC_INIT;
 	struct transport_ls_refs_options transport_options =
 		TRANSPORT_LS_REFS_OPTIONS_INIT;
+	struct string_list option_server_options = STRING_LIST_INIT_DUP;
+	struct string_list *server_options = NULL;
 	int i;
-	struct string_list server_options = STRING_LIST_INIT_DUP;
 
 	struct remote *remote;
 	struct transport *transport;
@@ -80,15 +96,22 @@ int cmd_ls_remote(int argc, const char **argv, const char *prefix)
 			      2, PARSE_OPT_NOCOMPLETE),
 		OPT_BOOL(0, "symref", &show_symref_target,
 			 N_("show underlying ref in addition to the object pointed by it")),
-		OPT_STRING_LIST('o', "server-option", &server_options, N_("server-specific"), N_("option to transmit")),
+		OPT_STRING_LIST('o', "server-option", &option_server_options,
+				N_("server-specific"),
+				N_("option to transmit")),
 		OPT_END()
 	};
+
+	git_config(git_ls_remote_config, NULL);
 
 	memset(&ref_array, 0, sizeof(ref_array));
 
 	argc = parse_options(argc, argv, prefix, options, ls_remote_usage,
 			     PARSE_OPT_STOP_AT_NON_OPTION);
 	dest = argv[0];
+
+	server_options = option_server_options.nr ?
+			 &option_server_options : &config_server_options;
 
 	/*
 	 * TODO: This is buggy, but required for transport helpers. When a
@@ -130,8 +153,8 @@ int cmd_ls_remote(int argc, const char **argv, const char *prefix)
 	transport = transport_get(remote, NULL);
 	if (uploadpack)
 		transport_set_option(transport, TRANS_OPT_UPLOADPACK, uploadpack);
-	if (server_options.nr)
-		transport->server_options = &server_options;
+	if (server_options && server_options->nr)
+		transport->server_options = server_options;
 
 	ref = transport_get_remote_refs(transport, &transport_options);
 	if (ref) {
@@ -169,5 +192,6 @@ int cmd_ls_remote(int argc, const char **argv, const char *prefix)
 	transport_ls_refs_options_release(&transport_options);
 
 	strvec_clear(&pattern);
+	string_list_clear(&option_server_options, 0);
 	return status;
 }

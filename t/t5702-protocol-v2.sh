@@ -173,16 +173,35 @@ test_expect_success 'ref advertisement is filtered with ls-remote using protocol
 test_expect_success 'server-options are sent when using ls-remote' '
 	test_when_finished "rm -f log" &&
 
-	GIT_TRACE_PACKET="$(pwd)/log" git -c protocol.version=2 \
-		ls-remote -o hello -o world "file://$(pwd)/file_parent" main >actual &&
-
 	cat >expect <<-EOF &&
 	$(git -C file_parent rev-parse refs/heads/main)$(printf "\t")refs/heads/main
 	EOF
 
+	# Specify server options from command line
+	GIT_TRACE_PACKET="$(pwd)/log" git -c protocol.version=2 \
+		ls-remote -o hello -o world "file://$(pwd)/file_parent" main >actual &&
 	test_cmp expect actual &&
-	grep "server-option=hello" log &&
-	grep "server-option=world" log
+	test_grep "server-option=hello" log &&
+	test_grep "server-option=world" log &&
+	rm -f log &&
+
+	# Specify server options from fetch.serverOption config
+	GIT_TRACE_PACKET="$(pwd)/log" git -c protocol.version=2 \
+		-c fetch.serverOption=hello -c fetch.serverOption=world \
+		ls-remote "file://$(pwd)/file_parent" main >actual &&
+	test_cmp expect actual &&
+	test_grep "server-option=hello" log &&
+	test_grep "server-option=world" log &&
+	rm -f log &&
+
+	# Cmdline server options take a higher priority
+	GIT_TRACE_PACKET="$(pwd)/log" git -c protocol.version=2 \
+		-c fetch.serverOption=hello -c fetch.serverOption=world \
+		ls-remote -o foo=bar "file://$(pwd)/file_parent" main >actual &&
+	test_cmp expect actual &&
+	test_grep ! "server-option=hello" log &&
+	test_grep ! "server-option=world" log &&
+	test_grep "server-option=foo=bar" log
 '
 
 test_expect_success 'warn if using server-option with ls-remote with legacy protocol' '
