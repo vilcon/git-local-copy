@@ -95,7 +95,7 @@ static struct transport *gtransport;
 static struct transport *gsecondary;
 static struct refspec refmap = REFSPEC_INIT_FETCH;
 static struct list_objects_filter_options filter_options = LIST_OBJECTS_FILTER_INIT;
-static struct string_list server_options = STRING_LIST_INIT_DUP;
+static struct string_list config_server_options = STRING_LIST_INIT_DUP;
 static struct string_list negotiation_tip = STRING_LIST_INIT_NODUP;
 
 struct fetch_config {
@@ -168,6 +168,13 @@ static int git_fetch_config(const char *k, const char *v,
 		else
 			die(_("invalid value for '%s': '%s'"),
 			    "fetch.output", v);
+	}
+
+	if (!strcmp(k, "fetch.serveroption")) {
+		if (!v)
+			return config_error_nonbool(k);
+		parse_transport_option(v, &config_server_options);
+		return 0;
 	}
 
 	return git_default_config(k, v, ctx, cb);
@@ -2063,7 +2070,8 @@ static inline void fetch_one_setup_partial(struct remote *remote)
 
 static int fetch_one(struct remote *remote, int argc, const char **argv,
 		     int prune_tags_ok, int use_stdin_refspecs,
-		     const struct fetch_config *config)
+		     const struct fetch_config *config,
+		     struct string_list *server_options)
 {
 	struct refspec rs = REFSPEC_INIT_FETCH;
 	int i;
@@ -2124,8 +2132,8 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
 		strbuf_release(&line);
 	}
 
-	if (server_options.nr)
-		gtransport->server_options = &server_options;
+	if (server_options && server_options->nr)
+		gtransport->server_options = server_options;
 
 	sigchain_push_common(unlock_pack_on_signal);
 	atexit(unlock_pack_atexit);
@@ -2152,6 +2160,8 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 	const char *submodule_prefix = "";
 	const char *bundle_uri;
 	struct string_list list = STRING_LIST_INIT_DUP;
+	struct string_list option_server_options = STRING_LIST_INIT_DUP;
+	struct string_list *server_options = NULL;
 	struct remote *remote = NULL;
 	int all = -1, multiple = 0;
 	int result = 0;
@@ -2231,7 +2241,8 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 			 N_("accept refs that update .git/shallow")),
 		OPT_CALLBACK_F(0, "refmap", &refmap, N_("refmap"),
 			       N_("specify fetch refmap"), PARSE_OPT_NONEG, parse_refmap_arg),
-		OPT_STRING_LIST('o', "server-option", &server_options, N_("server-specific"), N_("option to transmit")),
+		OPT_STRING_LIST('o', "server-option", &option_server_options, N_("server-specific"),
+				N_("option to transmit")),
 		OPT_IPVERSION(&family),
 		OPT_STRING_LIST(0, "negotiation-tip", &negotiation_tip, N_("revision"),
 				N_("report that we have only objects reachable from this object")),
@@ -2271,6 +2282,9 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 
 	argc = parse_options(argc, argv, prefix,
 			     builtin_fetch_options, builtin_fetch_usage, 0);
+
+	server_options = option_server_options.nr ?
+			 &option_server_options : &config_server_options;
 
 	if (recurse_submodules_cli != RECURSE_SUBMODULES_DEFAULT)
 		config.recurse_submodules = recurse_submodules_cli;
@@ -2418,8 +2432,8 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 			result = 1;
 			goto cleanup;
 		}
-		if (server_options.nr)
-			gtransport->server_options = &server_options;
+		if (server_options && server_options->nr)
+			gtransport->server_options = server_options;
 		result = transport_fetch_refs(gtransport, NULL);
 
 		oidset_iter_init(&acked_commits, &iter);
@@ -2430,7 +2444,7 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 		if (filter_options.choice || repo_has_promisor_remote(the_repository))
 			fetch_one_setup_partial(remote);
 		result = fetch_one(remote, argc, argv, prune_tags_ok, stdin_refspecs,
-				   &config);
+				   &config, server_options);
 	} else {
 		int max_children = max_jobs;
 
@@ -2529,5 +2543,6 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 
  cleanup:
 	string_list_clear(&list, 0);
+	string_list_clear(&option_server_options, 0);
 	return result;
 }

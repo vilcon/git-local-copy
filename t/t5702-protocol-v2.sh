@@ -368,17 +368,45 @@ test_expect_success 'ref advertisement is filtered during fetch using protocol v
 test_expect_success 'server-options are sent when fetching' '
 	test_when_finished "rm -f log" &&
 
-	test_commit -C file_parent four &&
-
+	# Specify server options from command line
 	GIT_TRACE_PACKET="$(pwd)/log" git -C file_child -c protocol.version=2 \
 		fetch -o hello -o world origin main &&
+	test_grep "server-option=hello" log &&
+	test_grep "server-option=world" log &&
+	rm -f log &&
 
-	git -C file_child log -1 --format=%s origin/main >actual &&
-	git -C file_parent log -1 --format=%s >expect &&
-	test_cmp expect actual &&
+	# Specify server options from fetch.serverOption config
+	GIT_TRACE_PACKET="$(pwd)/log" git -C file_child -c protocol.version=2 \
+		-c fetch.serverOption=hello -c fetch.serverOption=world \
+		fetch origin main &&
+	test_grep "server-option=hello" log &&
+	test_grep "server-option=world" log &&
+	rm -f log &&
 
-	grep "server-option=hello" log &&
-	grep "server-option=world" log
+	# Cmdline server options take a higher priority
+	GIT_TRACE_PACKET="$(pwd)/log" git -C file_child -c protocol.version=2 \
+		-c fetch.serverOption=hello -c fetch.serverOption=world \
+		fetch -o foo=bar origin main &&
+	test_grep ! "server-option=hello" log &&
+	test_grep ! "server-option=world" log &&
+	test_grep "server-option=foo=bar" log
+'
+
+test_expect_success 'empty value of fetch.serverOption in config clears the list' '
+	test_when_finished "rm -f log" &&
+	GIT_TRACE_PACKET="$(pwd)/log" git -C file_child -c protocol.version=2 \
+		-c fetch.serverOption=hello -c fetch.serverOption=world \
+		-c fetch.serverOption= -c fetch.serverOption=foo=bar \
+		fetch origin main &&
+	test_grep ! "server-option=hello" log &&
+	test_grep ! "server-option=world" log &&
+	test_grep "server-option=foo=bar" log
+'
+
+test_expect_success 'invalid fetch.serverOption in config' '
+	test_when_finished "rm -f log" &&
+	test_must_fail git -C file_child -c protocol.version=2 \
+		-c fetch.serverOption fetch origin main
 '
 
 test_expect_success 'warn if using server-option with fetch with legacy protocol' '
