@@ -85,7 +85,8 @@ static struct string_list option_recurse_submodules = STRING_LIST_INIT_NODUP;
 static struct list_objects_filter_options filter_options = LIST_OBJECTS_FILTER_INIT;
 static int option_filter_submodules = -1;    /* unspecified */
 static int config_filter_submodules = -1;    /* unspecified */
-static struct string_list server_options = STRING_LIST_INIT_NODUP;
+static struct string_list config_server_options = STRING_LIST_INIT_DUP;
+static struct string_list option_server_options = STRING_LIST_INIT_DUP;
 static int option_remote_submodules;
 static const char *bundle_uri;
 
@@ -160,7 +161,7 @@ static struct option builtin_clone_options[] = {
 		   N_("specify the reference format to use")),
 	OPT_STRING_LIST('c', "config", &option_config, N_("key=value"),
 			N_("set config inside the new repository")),
-	OPT_STRING_LIST(0, "server-option", &server_options,
+	OPT_STRING_LIST(0, "server-option", &option_server_options,
 			N_("server-specific"), N_("option to transmit")),
 	OPT_IPVERSION(&family),
 	OPT_PARSE_LIST_OBJECTS_FILTER(&filter_options),
@@ -847,6 +848,12 @@ static int git_clone_config(const char *k, const char *v,
 		config_reject_shallow = git_config_bool(k, v);
 	if (!strcmp(k, "clone.filtersubmodules"))
 		config_filter_submodules = git_config_bool(k, v);
+	if (!strcmp(k, "fetch.serveroption")) {
+		if (!v)
+			return config_error_nonbool(k);
+		parse_transport_option(v, &config_server_options);
+		return 0;
+	}
 
 	return git_default_config(k, v, ctx, cb);
 }
@@ -982,16 +989,19 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 	int hash_algo;
 	enum ref_storage_format ref_storage_format = REF_STORAGE_FORMAT_UNKNOWN;
 	const int do_not_override_repo_unix_permissions = -1;
-
+	struct string_list *server_options = NULL;
 	struct transport_ls_refs_options transport_ls_refs_options =
 		TRANSPORT_LS_REFS_OPTIONS_INIT;
 
 	packet_trace_identity("clone");
 
-	git_config(git_clone_config, NULL);
+	git_config(git_default_config, NULL);
 
 	argc = parse_options(argc, argv, prefix, builtin_clone_options,
 			     builtin_clone_usage, 0);
+
+	server_options = option_server_options.nr ?
+			 &option_server_options : &config_server_options;
 
 	if (argc > 2)
 		usage_msg_opt(_("Too many arguments."),
@@ -1359,8 +1369,8 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 		transport_set_option(transport, TRANS_OPT_UPLOADPACK,
 				     option_upload_pack);
 
-	if (server_options.nr)
-		transport->server_options = &server_options;
+	if (server_options && server_options->nr)
+		transport->server_options = server_options;
 
 	if (filter_options.choice) {
 		const char *spec =

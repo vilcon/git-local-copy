@@ -1091,6 +1091,14 @@ int is_transport_allowed(const char *type, int from_user)
 	BUG("invalid protocol_allow_config type");
 }
 
+void parse_transport_option(const char *option, struct string_list *transport_options)
+{
+	if (!*option)
+		string_list_clear(transport_options, 0);
+	else
+		string_list_append(transport_options, option);
+}
+
 void transport_check_allowed(const char *type)
 {
 	if (!is_transport_allowed(type, -1))
